@@ -26,7 +26,6 @@ import os
 import cv2
 from scipy.ndimage.interpolation import rotate'''
 
-
 class space_carving_rotation_2d__():
     def __init__(self, model_path, gt_mode=False, theta_bias=0, total_theta_positions=180):
         # theta position bias for simulating rotation of position of the object
@@ -44,6 +43,8 @@ class space_carving_rotation_2d__():
         
         self.bbox = json.load(
             open(os.path.join(model_path, 'bbox_general.json')))
+        #self.bbox = json.load(open(os.path.join(
+        #    model_path, '/home/pico/uni/romi/scanner_cube/bbox_min_max.json')))
         
         self.camera_model = json.load(
             open(os.path.join(model_path, 'camera_model.json')))
@@ -58,7 +59,7 @@ class space_carving_rotation_2d__():
         # uses ground truth model 
         if self.gt_mode is True:
             self.gt = np.load(os.path.join(
-                model_path, 'volumes', 'vol_180.npy'))
+                model_path, 'volumes', 'vol_64x64x64.npy'))
             self.gt_solid_mask = np.where(self.gt == 1, True, False)
             self.gt_n_solid_voxels = np.count_nonzero(self.gt_solid_mask)
 
@@ -97,25 +98,17 @@ class space_carving_rotation_2d__():
     def carve(self, theta, phi):
         '''space carve in position phi(rows),theta(cols)
         phi and theta are steps of the scanner, not angles'''
-        # if using theta bias add it to get the real theta position
-        if self.theta_bias != 0:
-            theta = self.calculate_theta_position(theta, -self.theta_bias)
+        # if using theta bias, use image of biased (shifted)theta with extrinsics
+        #of current position to create a rotate model
+        biased_theta = self.calculate_theta_position(theta, -self.theta_bias)
+        image_idx = (self.total_theta_positions * phi) + biased_theta
+        
+        extrinsics_idx = (self.total_theta_positions * phi) + theta
+        
+        im = self.load_mask(image_idx)
+        self.space_carve(im, self.extrinsics[extrinsics_idx])
 
-        idx = (self.total_theta_positions * phi) + theta
-
-        im = self.load_mask(idx)
-        self.space_carve(im, self.extrinsics[idx])
-
-        if self.theta_bias == 0:
-            self.volume = self.sc.values()
-        else:
-            # convert theta bias  to degrees and rotate volume to
-            # biased position
-            self.volume = rotate(self.sc.values(),
-                angle=self.theta_bias*(360//self.total_theta_positions), reshape=False)
-            
-        #rotate according with position of camera plane xy is always pointing where camera sees
-        #self.volume = rotate(self.sc.values(),angle=-idx*(360//self.total_theta_positions),reshape=False)
+        self.volume = self.sc.values()
 
     def space_carve(self, mask, rt):
         '''do space carving on mask with preset parameters'''
@@ -220,19 +213,20 @@ if not os.path.exists(plots_dir):
         
 for model in range(206,212):
     data_path = os.path.join( parent_dir,str(model).zfill(3)+'_2d' )
-    dest_dir = os.path.join(data_path,'volumes')
+    dest_dir = os.path.join(data_path,'ground_truth_volumes')
     if not os.path.exists(dest_dir):
         os.makedirs(dest_dir)
 
     print(dest_dir)
 
-    spc = space_carving_rotation_2d__(data_path)
-    for j in range(4):
-        for i in range(180):
-            spc.carve(i,j)
-    #h = np.histogram(spc.sc.values(), bins=3)[0]
+    for bias in range(180):
+        spc = space_carving_rotation_2d__(data_path, theta_bias=bias)
+        for j in range(4):
+            for i in range(180):
+                spc.carve(i,j)
+        #h = np.histogram(spc.sc.values(), bins=3)[0]
     
-    np.save(os.path.join(dest_dir,'vol_64x64x64'), spc.volume)
-    plot_save_vol(os.path.join(plots_dir,str(model).zfill(3)+'_2d'),spc.volume)
-    print("\r{}     ".format(model), end="")
+        np.save(os.path.join(dest_dir,'vol_64x64x64_rot_' + str(bias).zfill(3) ), spc.volume)
+        plot_save_vol(os.path.join(plots_dir,str(model).zfill(3)+'_rot_' +  str(bias).zfill(3) ),spc.volume)
+        print("\r{}     ".format(model), end="")
     #break
