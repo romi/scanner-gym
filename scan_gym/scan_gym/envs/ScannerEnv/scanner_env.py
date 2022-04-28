@@ -17,8 +17,6 @@ import os
 from .space_carving import *
 import random
 
-MODELS_PATH = '/home/pico/uni/romi/scanner_cube/arabidopsis_im_bigger/ramdisk'
-
 
 class ScannerEnv(gym.Env):
     """
@@ -40,10 +38,13 @@ class ScannerEnv(gym.Env):
         # 3d models used for training
         self.train_models = train_models  
 
-        # --------------------------self.zeros_test = np.zeros((66,68,152)).astype('float16')
-
         '''the state returned by this environment consiste of
+        last three images,
         the volume being carved , theta position , phi position'''
+        # images
+        self.images_shape = (84,84,3)
+        self.img_obs_space = gym.spaces.Box(low=0, high=255, shape=self.images_shape, dtype=np.uint8)
+        
         # volume used in the carving
         self.volume_shape = (64,64,64)
         self.vol_obs_space = gym.spaces.Box(low=-1, high=1, shape=self.volume_shape, dtype=np.float16)
@@ -63,21 +64,19 @@ class ScannerEnv(gym.Env):
         self.vec_ob_space = gym.spaces.Box(lowl, highl, dtype=np.int32)'''
 
 
-        self.observation_space = gym.spaces.Tuple((self.vol_obs_space, self.theta_obs_space, self.phi_obs_space))
+        self.observation_space = gym.spaces.Tuple((self.img_obs_space, self.vol_obs_space, self.theta_obs_space, self.phi_obs_space))
 
-
-        #action space 
-        self.actions = {0:1,1:5,2:10,3:15,4:20,5:25,6:30,7:35,8:40,9:45,10:50,11:55,12:60,13:65,14:70,15:75,16:80,17:85,18:90}
-        self.action_space = gym.spaces.Discrete(19)
 
         # map action with correspondent movements in theta and phi
         # theta numbers are number of steps relative to current position
         # phi numbers are absolute position in phi
         #(theta,phi)
-        self.action_map = {0:(2,0),1:(5,0),2:(10,0),3:(15,0),4:(25,0),5:(45,0),
+        self.actions = {0:(2,0),1:(5,0),2:(10,0),3:(15,0),4:(25,0),5:(45,0),
                            6:(2,1),7:(5,1),8:(10,1),9:(15,1),10:(25,1),11:(45,1),
                            12:(2,2),13:(5,2),14:(10,2),15:(15,2),16:(25,2),17:(45,2),
                            18:(2,3),19:(5,3),20:(10,3),21:(15,3),22:(25,3),23:(45,3)}
+
+        self.action_space = gym.spaces.Discrete(len(self.actions))
 
         #self._spec.id = "Romi-v0"
         self.reset()
@@ -120,8 +119,7 @@ class ScannerEnv(gym.Env):
         #append initial position to visited positions list    
         self.visited_positions.append((self.current_theta, self.current_phi))
     
-        #---------------------------------------self.state_images[0] = self.current_position #add first image to state
-        
+                
         # take random  model from available models list
         model = random.choice(self.train_models)
 
@@ -134,6 +132,12 @@ class ScannerEnv(gym.Env):
         # carve image from initial position
         self.spc.carve(self.current_theta, self.current_phi)
         vol = self.spc.volume
+
+        # get camera image
+        im = np.array(self.spc.get_image(self.current_theta, self.current_phi))
+        # need 3 last images, this is first taken image so copy it 3 times
+        #and adjust dimensions (height,width,channel)
+        self.im3 = np.array([im,im,im]).transpose(1,2,0)
         
 
         if self.gt_mode is True:
@@ -147,9 +151,10 @@ class ScannerEnv(gym.Env):
                                 np.count_nonzero(vol == 1) ] 
             self.last_voxel_count = self.voxel_count.copy() 
         
-        self.current_state = ( vol.astype('float16') ,
-                               np.array([self.current_theta],dtype=int),
-                               np.array([self.current_phi],dtype=int))
+        self.current_state = (self.im3,
+                              vol.astype('float16') ,
+                              np.array([self.current_theta],dtype=int),
+                              np.array([self.current_phi],dtype=int))
 
         return self.current_state
 
@@ -158,11 +163,21 @@ class ScannerEnv(gym.Env):
 
     def step(self, action):
         self.num_steps += 1
+
+        # decode theta and phi from action number
+        theta = self.actions[action][0]
+        phi = self.actions[action][1]
         
-        #move n steps from current position
-        steps = self.actions[action]
-        self.current_position = self.calculate_position(self.current_position, steps)
-        
+        #move n theta steps from current theta position
+        self.current_theta = self.calculate_theta_position(self.current_theta, theta)
+        # phi indicates absolute position
+        #check phi limits
+        if phi < 0:
+            phi = 0
+        elif phi >= self.phi_n_positions:
+            phi = self.phi_n_positions-1
+            
+        self.current_phi = phi
         
         
         self.visited_positions.append((self.current_theta, self.current_phi))
@@ -170,6 +185,11 @@ class ScannerEnv(gym.Env):
         #carve in new position
         self.spc.carve(self.current_theta, self.current_phi)
         vol = self.spc.volume
+
+        # get camera image
+        im = np.array(self.spc.get_image(self.current_theta, self.current_phi))
+        # need 3 last images, #and adjust dimensions (height,width,channel)
+        self.im3 = np.array([self.im3[:,:,1],self.im3[:,:,2], im]).transpose(1,2,0)
 
         
         if self.gt_mode is True:
@@ -200,9 +220,10 @@ class ScannerEnv(gym.Env):
            
         self.total_reward += reward
 
-        self.current_state = ( vol.astype('float16') ,
-                               np.array([self.current_theta],dtype=int),
-                               np.array([self.current_phi],dtype=int))
+        self.current_state = (self.im3,
+                              vol.astype('float16') ,
+                              np.array([self.current_theta],dtype=int),
+                              np.array([self.current_phi],dtype=int))
       
 
         return self.current_state, reward, self.done, {}

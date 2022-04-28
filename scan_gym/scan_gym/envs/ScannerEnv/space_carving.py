@@ -85,8 +85,8 @@ class space_carving_rotation_2d():
         image_idx = (self.total_theta_positions * phi) + biased_theta
         
         img = Image.open(self.img_files[image_idx])
-        #cp = img.resize((84,84))
-        cp = ImageOps.grayscale(img)  #(cp)
+        cp = img.resize((84,84))
+        cp = ImageOps.grayscale(cp)
         #cp = img.copy()
         img.close()
         return cp
