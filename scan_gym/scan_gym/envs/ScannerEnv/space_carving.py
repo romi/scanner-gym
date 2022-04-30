@@ -8,7 +8,7 @@ from skimage.morphology import binary_dilation
 import proc3d
 import json
 from PIL import Image, ImageOps
-from utils import *
+from .utils import *
 import glob
 import os
 
@@ -23,6 +23,9 @@ class space_carving_rotation_2d():
         
         # number of posible positions around the circle
         self.total_theta_positions = total_theta_positions
+
+        # to keep image taken in current position
+        #self.im = None
         
         # get all .png file names of images from folder path
         self.img_files = sorted (
@@ -78,7 +81,9 @@ class space_carving_rotation_2d():
     
     '''def load_image(self,idx):
         img = Image.open(self.img_files[idx])
-        cp = img.copy()                                                                                                     img.close()                                                                                                         return cp'''
+        cp = img.copy()
+        img.close()
+        return cp'''
     
     def get_image(self, theta, phi):
         biased_theta = self.calculate_theta_position(theta, -self.theta_bias)
@@ -117,6 +122,7 @@ class space_carving_rotation_2d():
         extrinsics_idx = (self.total_theta_positions * phi) + theta
         
         im = self.load_mask(image_idx)
+        #im = self.load_image(image_idx)
         self.space_carve(im, self.extrinsics[extrinsics_idx])
 
         self.volume = self.sc.values()
@@ -130,7 +136,7 @@ class space_carving_rotation_2d():
 
     def space_carve(self, mask, rt):
         '''do space carving on mask with preset parameters'''
-        # mask = im.copy() #get_mask(im)
+        # mask = im.copy() #mask = get_mask(im)
         rot = sum(rt['R'], [])
         tvec = rt['T']
         if self.n_dilation:

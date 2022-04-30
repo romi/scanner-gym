@@ -23,7 +23,7 @@ class ScannerEnv(gym.Env):
     Custom OpenAI Gym environment  for training 3d scannner
     """
     metadata = {'render.modes': ['human']}
-    def __init__(self,models_path,train_models,gt_mode=True):
+    def __init__(self,models_path,train_models,continuous=False,gt_mode=True):
         super(ScannerEnv, self).__init__()
         #self.__version__ = "7.0.1"
         # if gt_mode true, ground truth model is used by space carving object (for comparing it against current volume)
@@ -36,7 +36,10 @@ class ScannerEnv(gym.Env):
         # total of posible positions for phi in env
         self.phi_n_positions = 4
         # 3d models used for training
-        self.train_models = train_models  
+        self.train_models = train_models
+
+        #for activating continuous action mode
+        self.continuous = continuous
 
         '''the state returned by this environment consiste of
         last three images,
@@ -67,17 +70,21 @@ class ScannerEnv(gym.Env):
         self.observation_space = gym.spaces.Tuple((self.img_obs_space, self.vol_obs_space, self.theta_obs_space, self.phi_obs_space))
 
 
-        # map action with correspondent movements in theta and phi
-        # theta numbers are number of steps relative to current position
-        # phi numbers are absolute position in phi
-        #(theta,phi)
-        self.actions = {0:(2,0),1:(5,0),2:(10,0),3:(15,0),4:(25,0),5:(45,0),
-                           6:(2,1),7:(5,1),8:(10,1),9:(15,1),10:(25,1),11:(45,1),
-                           12:(2,2),13:(5,2),14:(10,2),15:(15,2),16:(25,2),17:(45,2),
-                           18:(2,3),19:(5,3),20:(10,3),21:(15,3),22:(25,3),23:(45,3)}
+        if self.continuous:
+             self.action_space = spaces.Box(-1, +1, (2,), dtype=np.float32)     
+        else:
+            # map action with correspondent movements in theta and phi
+            # theta numbers are number of steps relative to current position
+            # phi numbers are absolute position in phi
+            #(theta,phi)
+            self.actions = {0:(2,0),1:(5,0),2:(10,0),3:(15,0),4:(25,0),5:(45,0),
+                            6:(2,1),7:(5,1),8:(10,1),9:(15,1),10:(25,1),11:(45,1),
+                            12:(2,2),13:(5,2),14:(10,2),15:(15,2),16:(25,2),17:(45,2),
+                            18:(2,3),19:(5,3),20:(10,3),21:(15,3),22:(25,3),23:(45,3)}
 
-        self.action_space = gym.spaces.Discrete(len(self.actions))
+            self.action_space = gym.spaces.Discrete(len(self.actions))
 
+       
         #self._spec.id = "Romi-v0"
         self.reset()
 
@@ -164,10 +171,18 @@ class ScannerEnv(gym.Env):
     def step(self, action):
         self.num_steps += 1
 
-        # decode theta and phi from action number
-        theta = self.actions[action][0]
-        phi = self.actions[action][1]
-        
+        if self.continuous:
+            action = np.clip(action, -1, +1).astype(np.float32)
+            # decode theta and phi
+            theta = theta_from_continuous(action[0])
+            phi = phi_from_continuous(action[1])
+
+        else:
+            # decode theta and phi from action number
+            theta = self.actions[action][0]
+            phi = self.actions[action][1]
+
+            
         #move n theta steps from current theta position
         self.current_theta = self.calculate_theta_position(self.current_theta, theta)
         # phi indicates absolute position
@@ -179,6 +194,8 @@ class ScannerEnv(gym.Env):
             
         self.current_phi = phi
         
+
+
         
         self.visited_positions.append((self.current_theta, self.current_phi))
 
@@ -220,6 +237,7 @@ class ScannerEnv(gym.Env):
            
         self.total_reward += reward
 
+
         self.current_state = (self.im3,
                               vol.astype('float16') ,
                               np.array([self.current_theta],dtype=int),
@@ -231,6 +249,15 @@ class ScannerEnv(gym.Env):
  
     def minMaxNorm(self,old, oldmin, oldmax , newmin , newmax):
         return ( (old-oldmin)*(newmax-newmin)/(oldmax-oldmin) ) + newmin
+
+
+    def theta_from_continuous(self, cont):
+        '''converts float from (-1,1) to int (-90,90) '''
+        return int(minMaxNorm(cont,-1.0,+1.0,-90,90))
+
+    def phi_from_continuous(self, cont):
+        '''converts float from (-1,1) to int (0,3) '''
+        return int(minMaxNorm(cont,-1.0,+1.0,0.0,3.0))
 
    
     def calculate_theta_position(self,curr_theta,steps):
