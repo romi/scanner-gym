@@ -6,10 +6,7 @@ import gym
 from gym import error, spaces, utils
 import glob
 from PIL import Image
-import open3d as o3d
-from .cl import *
 from skimage.morphology import binary_dilation
-from .proc3d import *
 import json
 from .utils import *
 import glob

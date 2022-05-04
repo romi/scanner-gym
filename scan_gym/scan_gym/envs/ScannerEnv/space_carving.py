@@ -1,11 +1,11 @@
 import cv2
 from scipy.ndimage import rotate
 import open3d as o3d
-import cl
+from .cl import Backprojection
 import utils as ut
 import numpy as np
 from skimage.morphology import binary_dilation
-import proc3d
+from .proc3d import *
 import json
 from PIL import Image, ImageOps
 from .utils import *
@@ -107,7 +107,7 @@ class space_carving_rotation_2d():
         nz = int((z_max - z_min) / self.voxel_size) + 1
 
         self.origin = np.array([x_min, y_min, z_min])
-        self.sc = cl.Backprojection(
+        self.sc = Backprojection(
             [nx, ny, nz], [x_min, y_min, z_min], self.voxel_size)
         self.volume = self.sc.values()
 
